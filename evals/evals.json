@@ -1,0 +1,68 @@
+{
+  "skill_name": "windows-software-installer",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "/INSTALL vscode",
+      "expected_output": "识别 /INSTALL 为简洁入口，并映射到 scoop 模式",
+      "assertions": [
+        "Recognizes /INSTALL as the skill trigger",
+        "Treats vscode as a software name",
+        "Uses --mode scoop"
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "帮我用 Scoop 安装 VS Code",
+      "expected_output": "识别为显式 scoop 模式，给出更安全的新命令格式",
+      "assertions": [
+        "Uses --mode scoop",
+        "Uses --software-name vscode",
+        "Uses --installer-type"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "/INSTALL D:\\Downloads\\app.msi",
+      "expected_output": "识别 /INSTALL + 绝对路径为 local-file 模式，并推断 msi 安装器类型",
+      "assertions": [
+        "Recognizes /INSTALL as the skill trigger",
+        "Uses --mode local-file",
+        "Uses --local-file parameter",
+        "Uses --installer-type msi"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "/INSTALL https://vendor.example/app.exe",
+      "expected_output": "识别 /INSTALL + HTTPS URL 为 download-verified 模式",
+      "assertions": [
+        "Recognizes /INSTALL as the skill trigger",
+        "Uses --mode download-verified",
+        "Uses --download-url",
+        "Mentions SHA256 or Authenticode verification"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "帮我从官网下载安装微信，如果没有 SHA256 就用签名校验",
+      "expected_output": "识别为 download-verified 模式，并要求 HTTPS 与签名或哈希验证",
+      "assertions": [
+        "Uses --mode download-verified",
+        "Uses --download-url",
+        "Mentions SHA256 or Authenticode verification",
+        "Mentions publisher confirmation or allowlist"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "从本地文件 D:\\Downloads\\app.msi 安装软件",
+      "expected_output": "识别为 local-file 模式，并使用绝对路径和安装器类型",
+      "assertions": [
+        "Uses --mode local-file",
+        "Uses --local-file parameter",
+        "Uses --installer-type msi"
+      ]
+    }
+  ]
+}
