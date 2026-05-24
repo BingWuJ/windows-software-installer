@@ -10,6 +10,7 @@ Install software on Windows using one of three explicit modes:
 
 import argparse
 import hashlib
+import os
 import shutil
 import subprocess
 import sys
@@ -37,7 +38,6 @@ INSTALLER_TEMPLATES = {
     "nsis": ["/S"],
     "inno": ["/VERYSILENT", "/NORESTART"],
     "msi": ["/quiet", "/norestart"],
-    "installshield": ["/s"],
 }
 
 
@@ -58,6 +58,10 @@ def run_command(cmd, check=True, capture_output=True):
 def fail(message):
     print(message, file=sys.stderr)
     return 1
+
+
+def ps_single_quote(value):
+    return str(value).replace("'", "''")
 
 
 def validate_safe_token(value, label, allowed_chars):
@@ -105,17 +109,19 @@ def verify_sha256(path, expected_sha256):
 
 
 def get_authenticode_signature(path):
+    escaped = str(path).replace("'", "''")
     command = [
         "pwsh",
         "-NoProfile",
         "-Command",
         (
-            "Get-AuthenticodeSignature -FilePath $args[0] | "
-            "Select-Object Status,StatusMessage,@{Name='Signer';Expression={"
+            f"Get-AuthenticodeSignature -FilePath '{escaped}' | "
+            "Select-Object @{Name='Status';Expression={$_.Status.ToString()}},"
+            "StatusMessage,"
+            "@{Name='Signer';Expression={"
             "if ($_.SignerCertificate) { $_.SignerCertificate.Subject } else { '' }"
             "}} | ConvertTo-Json -Compress"
         ),
-        str(path),
     ]
     result = run_command(command, check=False)
     if result.returncode != 0 or not result.stdout.strip():
@@ -191,30 +197,151 @@ def install_with_scoop(software_name, bucket=None):
     return False
 
 
-def download_installer(download_url, destination):
+def find_ndm():
+    """Return (ndm_exe, ndm_db) if Neat Download Manager is installed, else (None, None)."""
+    try:
+        import winreg
+        for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            for subpath in (
+                r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
+                r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+            ):
+                try:
+                    key = winreg.OpenKey(hive, subpath)
+                except OSError:
+                    continue
+                i = 0
+                while True:
+                    try:
+                        sub = winreg.OpenKey(key, winreg.EnumKey(key, i))
+                        try:
+                            name = winreg.QueryValueEx(sub, "DisplayName")[0]
+                            if "Neat Download Manager" in name:
+                                loc = winreg.QueryValueEx(sub, "InstallLocation")[0]
+                                exe = Path(loc) / "NeatDM.exe"
+                                db = Path(os.environ["APPDATA"]) / "NeatDM" / "NeatDB.db"
+                                if exe.exists() and db.exists():
+                                    return exe, db
+                        except OSError:
+                            pass
+                        finally:
+                            sub.Close()
+                        i += 1
+                    except OSError:
+                        break
+                key.Close()
+    except Exception:
+        pass
+    return None, None
+
+
+def download_with_ndm(download_url, ndm_exe, ndm_db, timeout=600):
+    """Dispatch a URL to Neat Download Manager and wait for completion.
+    Returns the Path of the downloaded file."""
+    import sqlite3, time
+
+    conn = sqlite3.connect(str(ndm_db))
+    max_id = conn.execute("SELECT COALESCE(MAX(id), 0) FROM downloads").fetchone()[0]
+    conn.close()
+
+    print(f"Sending to NDM: {download_url}")
+    subprocess.Popen([str(ndm_exe), download_url])
+
+    deadline = time.time() + timeout
+    last_status = ""
+    while time.time() < deadline:
+        time.sleep(2)
+        try:
+            conn = sqlite3.connect(str(ndm_db))
+            row = conn.execute(
+                "SELECT filename, status, folderpath FROM downloads "
+                "WHERE id > ? AND url = ? ORDER BY id DESC LIMIT 1",
+                (max_id, download_url),
+            ).fetchone()
+            conn.close()
+        except Exception:
+            continue
+
+        if not row:
+            continue
+        filename, status, folderpath = row
+        if status != last_status:
+            print(f"NDM: {status}")
+            last_status = status
+
+        if "Complete" in status:
+            return Path(folderpath) / filename
+        if "Error" in status:
+            raise RuntimeError(f"NDM download failed: {status}")
+
+    raise RuntimeError("NDM download timed out after 10 minutes")
+
+
+def download_with_powershell(download_url, destination, referer=None):
+    """Fallback download using PowerShell Invoke-WebRequest.
+    Supports Referer header for CDN hotlink protection."""
+    escaped_url = ps_single_quote(download_url)
+    escaped_destination = ps_single_quote(destination)
+    headers_clause = ""
+    if referer:
+        escaped_referer = ps_single_quote(referer)
+        headers_clause = f"-Headers @{{Referer='{escaped_referer}'}}"
+
+    cmd = [
+        "pwsh", "-NoProfile", "-Command",
+        (
+            "$ProgressPreference = 'SilentlyContinue'; "
+            f"Invoke-WebRequest -Uri '{escaped_url}' -OutFile '{escaped_destination}' "
+            f"-UseBasicParsing {headers_clause}"
+        ),
+    ]
+    result = run_command(cmd, check=False)
+    return result.returncode == 0 and destination.exists()
+
+
+def download_installer(download_url, destination, referer=None):
+    """Download to destination. Tries NDM → aria2c → PowerShell (with Referer support)."""
     destination.parent.mkdir(parents=True, exist_ok=True)
+
+    ndm_exe, ndm_db = find_ndm()
+    if ndm_exe:
+        try:
+            downloaded = download_with_ndm(download_url, ndm_exe, ndm_db)
+            shutil.copy2(downloaded, destination)
+            return True
+        except Exception as exc:
+            print(f"NDM failed ({exc}), falling back to aria2c")
+
     result = run_command(
         ["aria2c", "--allow-overwrite=true", "-d", str(destination.parent), "-o", destination.name, download_url],
         check=False,
     )
-    return result.returncode == 0
+    if result.returncode == 0:
+        return True
+
+    print("aria2c failed, falling back to PowerShell Invoke-WebRequest")
+    return download_with_powershell(download_url, destination, referer)
 
 
-def build_install_command(installer_path, installer_type, install_dir):
+def build_install_command(installer_path, installer_type, install_dir, interactive=False):
     installer_type = installer_type.lower()
+    if installer_type == "installshield":
+        raise ValueError("installshield installers are not supported because a generic silent install cannot reliably honor --install-dir")
     if installer_type not in INSTALLER_TEMPLATES:
         raise ValueError(f"Unsupported installer type: {installer_type}")
 
     if installer_type == "msi":
-        return [
-            "msiexec",
-            "/i",
-            str(installer_path),
-            *INSTALLER_TEMPLATES["msi"],
-            f"INSTALLDIR={install_dir}",
-        ]
+        cmd = ["msiexec", "/i", str(installer_path)]
+        if not interactive:
+            cmd.extend(INSTALLER_TEMPLATES["msi"])
+        cmd.append(f"TARGETDIR={install_dir}")
+        cmd.append(f"INSTALLDIR={install_dir}")
+        return cmd
 
-    command = [str(installer_path), *INSTALLER_TEMPLATES[installer_type]]
+    command = [str(installer_path)]
+    if not interactive:
+        command.extend(INSTALLER_TEMPLATES[installer_type])
+
     if installer_type == "nsis":
         command.append(f"/D={install_dir}")
     elif installer_type == "inno":
@@ -222,13 +349,15 @@ def build_install_command(installer_path, installer_type, install_dir):
     return command
 
 
-def verify_manual_install(install_dir):
+def verify_manual_install(install_dir, ignored_paths=None):
     if not install_dir.exists():
         return False
 
+    ignored = {Path(path).resolve() for path in (ignored_paths or [])}
     for pattern in ("*.exe", "*.lnk", "*.dll"):
-        if any(install_dir.rglob(pattern)):
-            return True
+        for candidate in install_dir.rglob(pattern):
+            if candidate.resolve() not in ignored:
+                return True
     return False
 
 
@@ -242,7 +371,7 @@ def prepare_local_installer(local_file, software_name, install_dir):
     return copied_path
 
 
-def prepare_downloaded_installer(download_url, software_name, install_dir):
+def prepare_downloaded_installer(download_url, software_name, install_dir, referer=None):
     parsed = validate_download_url(download_url)
     install_dir.mkdir(parents=True, exist_ok=True)
     DEFAULT_DOWNLOAD_CACHE.mkdir(parents=True, exist_ok=True)
@@ -252,7 +381,7 @@ def prepare_downloaded_installer(download_url, software_name, install_dir):
         raise ValueError("download-url must point to an .exe or .msi installer")
 
     cache_path = DEFAULT_DOWNLOAD_CACHE / f"{software_name}-installer{extension}"
-    if not download_installer(download_url, cache_path):
+    if not download_installer(download_url, cache_path, referer):
         raise RuntimeError(f"Failed to download installer from {download_url}")
 
     final_path = install_dir / cache_path.name
@@ -293,12 +422,21 @@ def install_manually(installer_path, installer_type, install_dir):
         print("Manual installation failed")
         return False
 
-    if verify_manual_install(install_dir):
+    if verify_manual_install(install_dir, ignored_paths=[installer_path]):
         print(f"Successfully installed software to {install_dir}")
         return True
 
     print("Installer exited successfully but installation could not be verified")
     return False
+
+
+def install_interactively(installer_path, installer_type, install_dir):
+    command = build_install_command(installer_path, installer_type, install_dir, interactive=True)
+    safe_print_command(command)
+    subprocess.Popen(command)
+    print()
+    print(f"Installer launched successfully. Install directory pre-set to: {install_dir}")
+    print("Installation is not complete yet. Finish the remaining steps manually and uncheck any bundled software.")
 
 
 def parse_args():
@@ -314,11 +452,15 @@ def parse_args():
     parser.add_argument(
         "--installer-type",
         required=True,
-        choices=["nsis", "inno", "msi", "installshield"],
+        choices=["nsis", "inno", "msi"],
     )
     parser.add_argument("--install-dir", dest="install_dir")
     parser.add_argument("--publisher")
+    parser.add_argument("--referer", dest="referer",
+                        help="Referer header for CDN hotlink protection (e.g. the official site URL)")
     parser.add_argument("--allow-untrusted-publisher", action="store_true")
+    parser.add_argument("--interactive", action="store_true",
+                        help="Launch installer interactively instead of silent, so you can manually uncheck bundled software")
     return parser.parse_args()
 
 
@@ -340,31 +482,44 @@ def main():
         return fail(str(error))
 
     if args.mode == "scoop":
-        if args.local_file or args.download_url or args.sha256 or args.publisher or args.allow_untrusted_publisher:
-            return fail("scoop mode does not accept local-file, download-url, sha256, publisher, or allow-untrusted-publisher")
+        if args.local_file or args.download_url or args.sha256 or args.publisher or args.allow_untrusted_publisher or args.interactive:
+            return fail("scoop mode does not accept local-file, download-url, sha256, publisher, allow-untrusted-publisher, or interactive")
         return 0 if install_with_scoop(software_name, args.scoop_bucket) else 1
 
     temp_paths = []
     try:
         if args.mode == "local-file":
+            if args.download_url or args.sha256 or args.publisher or args.allow_untrusted_publisher or args.referer:
+                return fail("local-file mode does not accept download-url, sha256, publisher, allow-untrusted-publisher, or referer")
             if not args.local_file:
                 return fail("local-file mode requires --local-file")
+
             installer_path = prepare_local_installer(args.local_file, software_name, install_dir)
             temp_paths.append(installer_path)
+            if args.interactive:
+                install_interactively(installer_path, args.installer_type, install_dir)
+                return 0
+
             success = install_manually(installer_path, args.installer_type, install_dir)
             return 0 if success else 1
 
+        if args.local_file:
+            return fail("download-verified mode does not accept --local-file")
         if not args.download_url:
             return fail("download-verified mode requires --download-url")
 
-        cache_path, installer_path = prepare_downloaded_installer(args.download_url, software_name, install_dir)
-        temp_paths.extend([cache_path, installer_path])
+        cache_path, installer_path = prepare_downloaded_installer(args.download_url, software_name, install_dir, referer=args.referer)
+        temp_paths.append(installer_path)
         validate_downloaded_installer(
             installer_path,
             args.sha256,
             args.publisher,
             args.allow_untrusted_publisher,
         )
+        if args.interactive:
+            install_interactively(installer_path, args.installer_type, install_dir)
+            return 0
+
         success = install_manually(installer_path, args.installer_type, install_dir)
         return 0 if success else 1
     except (RuntimeError, ValueError) as error:
@@ -380,4 +535,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-
