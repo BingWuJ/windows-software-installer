@@ -451,7 +451,8 @@ def parse_args():
     parser.add_argument("--sha256")
     parser.add_argument(
         "--installer-type",
-        required=True,
+        required=False,
+        default=None,
         choices=["nsis", "inno", "msi"],
     )
     parser.add_argument("--install-dir", dest="install_dir")
@@ -482,8 +483,8 @@ def main():
         return fail(str(error))
 
     if args.mode == "scoop":
-        if args.local_file or args.download_url or args.sha256 or args.publisher or args.allow_untrusted_publisher or args.interactive:
-            return fail("scoop mode does not accept local-file, download-url, sha256, publisher, allow-untrusted-publisher, or interactive")
+        if args.local_file or args.download_url or args.sha256 or args.publisher or args.allow_untrusted_publisher or args.interactive or args.installer_type:
+            return fail("scoop mode does not accept local-file, download-url, sha256, publisher, allow-untrusted-publisher, interactive, or installer-type")
         return 0 if install_with_scoop(software_name, args.scoop_bucket) else 1
 
     temp_paths = []
@@ -494,6 +495,8 @@ def main():
             if not args.local_file:
                 return fail("local-file mode requires --local-file")
 
+            if not args.installer_type:
+                return fail("--installer-type is required for local-file mode")
             installer_path = prepare_local_installer(args.local_file, software_name, install_dir)
             temp_paths.append(installer_path)
             if args.interactive:
@@ -508,6 +511,8 @@ def main():
         if not args.download_url:
             return fail("download-verified mode requires --download-url")
 
+        if not args.installer_type:
+            return fail("--installer-type is required for download-verified mode")
         cache_path, installer_path = prepare_downloaded_installer(args.download_url, software_name, install_dir, referer=args.referer)
         temp_paths.append(installer_path)
         validate_downloaded_installer(

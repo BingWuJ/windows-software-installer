@@ -1,6 +1,14 @@
 ---
 name: windows-software-installer
-description: Safer Windows software installer for explicit Scoop, local installer, or verified download workflows. Use when installing Windows software with controlled modes: (1) Scoop packages, (2) trusted local .exe/.msi installers, or (3) HTTPS downloads that pass SHA256 or Authenticode signature checks. Also trigger on concise requests such as `/INSTALL vscode`, `/INSTALL 微信`, `/INSTALL D:\Downloads\setup.msi`, or `/INSTALL https://vendor.example/app.exe`. Avoid for generic "install anything" requests or arbitrary unverified download-and-run flows. Note: winget is used only for discovery (to find the official download URL or confirm a package exists), not for installation — winget's --location flag is frequently ignored by installers, which would defeat the goal of keeping software off the C drive.
+description: >
+  Safer Windows software installer for explicit Scoop, local installer, or verified download workflows.
+  Use when installing Windows software with controlled modes: (1) Scoop packages, (2) trusted local
+  .exe/.msi installers, or (3) HTTPS downloads that pass SHA256 or Authenticode signature checks.
+  Also trigger on concise requests such as /INSTALL vscode, /INSTALL 微信, /INSTALL D:\Downloads\setup.msi,
+  or /INSTALL https://vendor.example/app.exe. Avoid for generic "install anything" requests or arbitrary
+  unverified download-and-run flows. Note: winget is used only for discovery (to find the official download
+  URL or confirm a package exists), not for installation — winget's --location flag is frequently ignored
+  by installers, which would defeat the goal of keeping software off the C drive.
 ---
 
 # Windows Software Installer
@@ -41,13 +49,12 @@ Rules:
 ## Modes
 
 ### `scoop`
-Use when the software exists in Scoop and you want the lowest-risk path.
+Use when the software exists in Scoop and you want the lowest-risk path. Note: `--installer-type` is not needed for scoop mode, Scoop manages the installation internally.
 
 ```bash
 python scripts/install_windows_software.py \
   --mode scoop \
-  --software-name vscode \
-  --installer-type nsis
+  --software-name vscode
 ```
 
 Optional bucket:
@@ -56,8 +63,7 @@ Optional bucket:
 python scripts/install_windows_software.py \
   --mode scoop \
   --software-name neovim-nightly \
-  --scoop-bucket nightly \
-  --installer-type nsis
+  --scoop-bucket nightly
 ```
 
 ### `local-file`
@@ -138,7 +144,7 @@ python scripts/install_windows_software.py \
 |---|---|---|---|
 | `--mode` | Yes | all | `scoop`, `local-file`, or `download-verified` |
 | `--software-name` | Yes | all | Safe identifier used for Scoop and default install dir |
-| `--installer-type` | Yes | all | `nsis`, `inno`, or `msi` |
+| `--installer-type` | Yes | local-file, download-verified | `nsis`, `inno`, or `msi` |
 | `--scoop-bucket` | No | scoop | Optional Scoop bucket |
 | `--local-file` | Yes | local-file | Absolute path to a trusted `.exe` or `.msi` |
 | `--download-url` | Yes | download-verified | HTTPS URL to the installer |

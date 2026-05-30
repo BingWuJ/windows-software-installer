@@ -17,8 +17,7 @@
       "expected_output": "识别为显式 scoop 模式，给出更安全的新命令格式",
       "assertions": [
         "Uses --mode scoop",
-        "Uses --software-name vscode",
-        "Uses --installer-type"
+        "Uses --software-name vscode"
       ]
     },
     {
@@ -62,6 +61,86 @@
         "Uses --mode local-file",
         "Uses --local-file parameter",
         "Uses --installer-type msi"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "/INSTALL sumatrapdf --sha256 abc123",
+      "expected_output": "download-verified 模式 + SHA256 哈希校验",
+      "assertions": [
+        "Uses --mode download-verified",
+        "Uses --download-url",
+        "Uses --sha256",
+        "Mentions SHA256 verification"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "从官网下载安装闪电说，官网是 shandianshuo.cn，可能有 CDN 防盗链",
+      "expected_output": "download-verified 模式 + referer 参数",
+      "assertions": [
+        "Uses --mode download-verified",
+        "Uses --referer",
+        "Mentions CDN or Referer"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "安装微信，要用交互式安装，我怕它捆绑软件",
+      "expected_output": "download-verified 模式 + interactive 参数",
+      "assertions": [
+        "Uses --mode download-verified",
+        "Uses --interactive",
+        "Mentions bundled software or manual uncheck"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "/INSTALL D:\\Downloads\\app-setup.exe",
+      "expected_output": "local-file 模式 + exe (非 msi)",
+      "assertions": [
+        "Uses --mode local-file",
+        "Uses --local-file",
+        "Mentions installer type for exe"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "/INSTALL http://example.com/app.exe",
+      "expected_output": "拒绝非 HTTPS URL",
+      "assertions": [
+        "Rejects non-HTTPS URL",
+        "Requires HTTPS download URL"
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "/INSTALL D:\\Downloads\\readme.txt",
+      "expected_output": "拒绝非 exe/msi 文件",
+      "assertions": [
+        "Rejects non-exe/msi file",
+        "Mentions only exe or msi allowed"
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "帮我在 winget 里搜索 Firefox，然后用它的官方下载链接安装",
+      "expected_output": "winget discover + download-verified 模式（Full Auto Workflow）",
+      "assertions": [
+        "Runs winget search for discovery",
+        "Uses winget show to get URL and SHA256",
+        "Uses --mode download-verified",
+        "Uses --sha256 from winget output"
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "/INSTALL D:\\Downloads\\MyApp-setup.exe 这个安装包是 Inno Setup 格式的",
+      "expected_output": "local-file 模式 + inno 安装器类型",
+      "assertions": [
+        "Uses --mode local-file",
+        "Uses --installer-type inno",
+        "Mentions Inno Setup"
       ]
     }
   ]
