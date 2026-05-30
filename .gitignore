@@ -5,3 +5,8 @@ __pycache__/
 .ruff_cache/
 .DS_Store
 Thumbs.db
+
+# npm publish 临时生成目录
+npm-publish/skill/
+npm-publish/node_modules/
+npm-publish/.pi-lens/

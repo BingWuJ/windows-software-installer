@@ -1,0 +1,10 @@
+# 开发辅助文件（不在 files 白名单中，双重保险）
+sync-skill.js
+node_modules/
+
+# 如果 files 字段被移除，这些规则生效
+evals/
+.git/
+.gitignore
+*.pyc
+__pycache__/
