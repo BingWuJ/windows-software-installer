@@ -1,5 +1,5 @@
 {
-  "name": "@bingwuj/windows-software-installer",
+  "name": "windows-software-installer-skill",
   "version": "1.0.0",
   "description": "Safer Windows software installer skill for AI coding agents (pi, Claude Code). Install via Scoop, local installer, or verified download with SHA256/Authenticode checks.",
   "bin": "./bin/cli.js",

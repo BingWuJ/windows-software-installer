@@ -184,6 +184,24 @@ The script auto-detects Neat Download Manager (via registry) and uses it as the 
 
 **Note:** `winget show` sometimes lists `Installer Type: msstore` — those are Microsoft Store apps. They cannot be redirected to D: and this workflow does not apply.
 
+## Post-Installation Cleanup
+
+After any download-based installation (`download-verified` mode or manual download + extract) succeeds and the installed version is verified, **always delete the cached download file** from `D:\WUDownloadCache`:
+
+```powershell
+Remove-Item 'D:\WUDownloadCache\<downloaded-file>' -Force
+```
+
+This applies to all archive types (`.zip`, `.tar.gz`) and installer files (`.exe`, `.msi`). Only clean up after confirming the installation was successful — do not delete the cache if verification failed or the user may need to retry.
+
+For portable software distributed as `.zip` (like CC-Switch Portable), the typical manual flow is:
+
+1. Download to `D:\WUDownloadCache`
+2. Verify SHA256
+3. Extract to `D:\iStall\<software_name>`
+4. Confirm installed version
+5. **Delete the zip from `D:\WUDownloadCache`**
+
 ## When To Prefer Each Mode
 
 - **Discovery first**: Run `winget search <name>` and `scoop search <name>` to find what's available. winget has broader coverage for mainstream consumer software; scoop is better for CLI/dev tools.
