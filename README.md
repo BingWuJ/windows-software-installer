@@ -217,6 +217,7 @@ Add `--interactive`. The script pre-fills the install directory and launches the
 windows-software-installer/
 ├── SKILL.md                      # Skill definition (read by agents)
 ├── README.md                     # This file
+├── README.zh.md                  # Chinese documentation
 ├── scripts/
 │   └── install_windows_software.py   # Core installation script
 ├── references/
