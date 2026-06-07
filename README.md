@@ -14,6 +14,10 @@
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" />
 </p>
 
+<p align="center">
+  <a href="./README.md">English</a> | <a href="./README.zh.md">简体中文</a>
+</p>
+
 ---
 
 ## Quick Start
@@ -237,7 +241,3 @@ windows-software-installer/
 [MIT](./LICENSE) © [BingWuJ](https://github.com/BingWuJ)
 
 ---
-
-<p align="center">
-  <a href="./README.zh.md">中文文档</a>
-</p>
